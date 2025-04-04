@@ -31,7 +31,7 @@ public class CalculationController {
                     @ApiResponse(responseCode = "503", description = "External service unavailable")
             })
     @PostMapping
-    public ResponseEntity<CalculationResponse> calculate(
+    public ResponseEntity<CalculationResponse> calculateCache(
             @Parameter(description = "Numbers to calculate", required = true)
             @Valid @RequestBody CalculationRequest request) {
         return ResponseEntity.ok(calculationService.calculateWithPercentage(request));

@@ -1,6 +1,5 @@
 package com.tenpo.demo.config;
 
-import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
@@ -47,12 +46,4 @@ public class SwaggerConfig {
                                 .url("https://springdoc.org")));
     }
 
-//    @Bean
-//    public OpenAPI minimalOpenAPI() {
-//        return new OpenAPI()
-//                .info(new Info()
-//                        .title("Tenpo Demo API")
-//                        .version("1.0.0")
-//                        .description("API for percentage calculations"));
-//    }
 }

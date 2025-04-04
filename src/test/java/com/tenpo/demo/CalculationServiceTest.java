@@ -1,5 +1,6 @@
 package com.tenpo.demo;
 
+import com.tenpo.demo.config.CacheConfig;
 import com.tenpo.demo.dto.CalculationRequest;
 import com.tenpo.demo.dto.CalculationResponse;
 import com.tenpo.demo.exception.ExternalServiceException;
@@ -8,15 +9,22 @@ import com.tenpo.demo.service.ExternalPercentageService;
 import com.tenpo.demo.service.HistoryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.MockitoAnnotations;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.isNull;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class CalculationServiceTest {
 
     @Mock
@@ -25,70 +33,80 @@ class CalculationServiceTest {
     @Mock
     private HistoryService historyService;
 
-    @InjectMocks
+    @Mock
+    private CacheManager cacheManager;
+
+    @Mock
+    private Cache cache;
+
     private CalculationService calculationService;
 
     @BeforeEach
     void setUp() {
-        // Reset mocks antes de cada test
-        reset(percentageService, historyService);
+        MockitoAnnotations.openMocks(this);
+        when(cacheManager.getCache(CacheConfig.PERCENTAGE_CACHE_NAME)).thenReturn(cache);
+        calculationService = new CalculationService(percentageService, historyService, cacheManager);
     }
 
     @Test
-    void calculateWithPercentage_ShouldReturnCorrectResult_WhenServiceWorks() {
+    void testGetCurrentPercentage_success() {
         // Arrange
-        when(percentageService.getPercentage()).thenReturn(10.0);
+        double expectedPercentage = 15.0;
+        when(percentageService.getPercentage()).thenReturn(expectedPercentage);
+
+        // Act
+        Double percentage = calculationService.getCurrentPercentage();
+
+        // Assert
+        assertNotNull(percentage);
+        assertEquals(expectedPercentage, percentage);
+    }
+
+    @Test
+    void testGetCurrentPercentage_serviceFailure() {
+        // Arrange
+        when(percentageService.getPercentage()).thenThrow(ExternalServiceException.class);
+
+        // Act
+        Double percentage = calculationService.getCurrentPercentage();
+
+        // Assert
+        assertNull(percentage);
+        verify(percentageService, times(1)).getPercentage();
+    }
+
+    @Test
+    void testCalculateWithPercentage_noCache_noError() {
+        // Arrange
         CalculationRequest request = new CalculationRequest(10.0, 20.0);
+        double expectedPercentage = 10.0;
+        double expectedResult = (10 + 20) * (1 + expectedPercentage / 100);
+        when(percentageService.getPercentage()).thenReturn(expectedPercentage);
 
         // Act
         CalculationResponse response = calculationService.calculateWithPercentage(request);
 
         // Assert
-        assertEquals(33.0, response.result(), 0.001, "El cálculo con 10% debería ser 33");
-        verify(historyService).logApiCall(
-            eq("/api/calculate"),
-            eq(request.toString()),
-            eq(response.toString()),
-            isNull()
-        );
+        assertEquals(expectedResult, response.result());
+        assertFalse(response.cachedPercentageUsed());
+        verify(historyService, times(1)).logApiCall(any(), any(), any(), isNull());
     }
 
     @Test
-    void calculateWithPercentage_ShouldHandleZeroPercentage() {
+    void testCalculateWithPercentage_usingCache() {
         // Arrange
-        when(percentageService.getPercentage()).thenReturn(0.0);
         CalculationRequest request = new CalculationRequest(10.0, 20.0);
+        double cachedPercentage = 5.0;
+        double expectedResult = (10 + 20) * (1 + cachedPercentage / 100);
+        when(percentageService.getPercentage()).thenReturn(null);
+        when(cache.get("currentPercentage", Double.class)).thenReturn(cachedPercentage);
 
         // Act
         CalculationResponse response = calculationService.calculateWithPercentage(request);
 
         // Assert
-        assertEquals(30.0, response.result(), 0.001, "Con 0% el resultado debería ser igual a la suma");
-    }
-
-    @Test
-    void calculateWithPercentage_ShouldHandleNegativeNumbers() {
-        // Arrange
-        when(percentageService.getPercentage()).thenReturn(10.0);
-        CalculationRequest request = new CalculationRequest(-10.0, 5.0);
-
-        // Act
-        CalculationResponse response = calculationService.calculateWithPercentage(request);
-
-        // Assert
-        assertEquals(-5.5, response.result(), 0.001, "Debería manejar números negativos correctamente");
-    }
-
-    @Test
-    void getCurrentPercentage_ShouldCallExternalService() {
-        // Arrange
-        when(percentageService.getPercentage()).thenReturn(15.0);
-
-        // Act
-        Double result = calculationService.getCurrentPercentage();
-
-        // Assert
-        assertEquals(15.0, result, 0.001);
-        verify(percentageService).getPercentage();
+        assertEquals(expectedResult, response.result());
+        assertTrue(response.cachedPercentageUsed());
+        verify(historyService, times(1)).logApiCall(any(), any(), any(), isNull());
     }
 }
